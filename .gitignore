@@ -1,0 +1,5 @@
+*.d
+*.o
+klient
+server
+*.kdev4
