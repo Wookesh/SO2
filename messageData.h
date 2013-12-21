@@ -1,3 +1,6 @@
+/* Łukasz Piesiewicz 334978
+ */
+
 #ifndef MESSAGEDATA_H
 #define MESSAGEDATA_H
 
@@ -9,7 +12,8 @@
 #define K_KEY 1337L
 
 long int server_t = 69L;
-
+char ERROR[] = "ERROR";
+char requestFormat[] = "%d %d";
 enum mIPC {
 	in = 0,
 	out = 1

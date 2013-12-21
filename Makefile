@@ -1,6 +1,6 @@
 CC          := gcc
 CFLAGS      := -Wall -c
-LDFLAGS     := -Wall
+LDFLAGS     := -Wall -pthread
 SOURCES     := $(wildcard *.c)
 MAINOBJECTS := $(subst .c,.o,$(shell grep -l main $(SOURCES)))
 ALL         := $(subst .o,,$(MAINOBJECTS))

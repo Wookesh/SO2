@@ -1,3 +1,6 @@
+/* Łukasz Piesiewicz 334978
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -27,6 +30,15 @@ void sendBeginProtocol(pid_t myPid)
 		syserr("msgsnd");
 }
 
+void requestResources(int k, int n)
+{
+	Mesg msg;
+	msg.mesg_type = type;
+	sprintf(msg.mesg_data, requestFormat, k, n);
+	if (msgsnd(IPCs[out], (char *) &msg, strlen(msg.mesg_data), 0) != 0)
+		syserr("msgsnd");
+}
+
 void sendEndProtocol()
 {
 	Mesg msg;
@@ -42,6 +54,9 @@ pid_t getResources()
 	if (msgrcv(IPCs[in], &msg, MAXMESGDATA, type, 0) <= 0)
 		syserr("msgrcv");
 	
+	if (strcmp(msg.mesg_data, ERROR) == 0)
+		syserr("Server Closed\n");
+	
 	return atoi(msg.mesg_data);
 }
 
@@ -52,7 +67,7 @@ void work(int s)
 
 void report(int k, int n, pid_t myPid, pid_t otherPid)
 {
-	printf("%d %d %d %d", k, n, myPid, otherPid);
+	printf("%d %d %d %d\n", k, n, myPid, otherPid);
 }
 
 int main(int argc, char **argv)
@@ -68,6 +83,9 @@ int main(int argc, char **argv)
 	
 	getIPCs();
 	sendBeginProtocol(myPid);
+	printf("Send BP\n");
+	requestResources(k, n);
+	printf("RequestMade\n");
 	otherPid = getResources();
 	report(k, n, myPid, otherPid);
 	work(s);
