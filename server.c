@@ -13,13 +13,23 @@
 
 int IPCs[2];
 
+struct Resource {
+	int resource;
+	int inPair;
+	int actualRequest;
+	pid_t firstPairMember;
+	pid_t secondPairMember;
+	pthread_cond_t waitForResources;
+	pthread_cond_t waitForPair;
+	pthread_mutex_t mutex;
+	pid_t firstAwaken;
+};
+
 struct Resources {
 	int K;
 	int N;
 	int error;
-	int * resources;
-	pthread_cond_t * notEnougthResources;
-	pthread_mutex_t * mutex;
+	struct Resource * resources;
 };
 
 struct Resources drugs;
@@ -32,9 +42,9 @@ void cerr(char * msg)
 	write(2, msg, i);
 }
 
-void report(pthread_t thread, int m, int n, int k, pid_t PID1, pid_t PID2)
+void report(pthread_t thread, int m, int n, int k, pid_t PID1, pid_t PID2, int resourcesLeft)
 {
-	printf("Wątek %lu przydziela %d+%d zasobów %d klientom %d %d, pozostało %d zasobów", thread, m, n, k, PID1, PID2, drugs.resources[k]);
+	printf(threadReportFormat, thread, m, n, k, PID1, PID2, resourcesLeft);
 }
 
 void createResources(int K, int N) 
@@ -42,15 +52,20 @@ void createResources(int K, int N)
 	drugs.K = K;
 	drugs.N = N;
 	drugs.error = 0;
-	drugs.resources = (int *)malloc(sizeof(int) * drugs.K);
-	drugs.notEnougthResources = (pthread_cond_t *)malloc(sizeof(pthread_cond_t) * drugs.K);
-	drugs.mutex = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t) * drugs.K);
+	drugs.resources = (struct Resource *)malloc(sizeof(struct Resource) * drugs.K);
 	int i, errId;
 	for (i = 0; i < drugs.K; ++i) {
-		drugs.resources[i] = drugs.N;
-		if ((errId = pthread_mutex_init(&(drugs.mutex[i]), 0) != 0))
+		drugs.resources[i].actualRequest = 0;
+		drugs.resources[i].resource = drugs.N;
+		drugs.resources[i].inPair = 0;
+		drugs.resources[i].firstPairMember = 0;
+		drugs.resources[i].secondPairMember = 0;
+		drugs.resources[i].firstAwaken = 0;
+		if ((errId = pthread_mutex_init(&(drugs.resources[i].mutex), 0) != 0))
 			syserr("%d. Mutex init %d failed", errId, i);
-		if ((errId = pthread_cond_init(&(drugs.notEnougthResources[i]), 0)) != 0)
+		if ((errId = pthread_cond_init(&(drugs.resources[i].waitForResources), 0)) != 0)
+			syserr("&d Cond init %d failed", errId, i);
+		if ((errId = pthread_cond_init(&(drugs.resources[i].waitForPair), 0)) != 0)
 			syserr("&d Cond init %d failed", errId, i);
 	}
 	
@@ -71,15 +86,15 @@ void initiateThreads(pthread_attr_t * attr)
 void deleteResources()
 {
 	int i, errId;
-	free(drugs.resources);
 	for (i = 0; i < drugs.K; ++i) {
-		if ((errId = pthread_cond_destroy(&(drugs.notEnougthResources[i]))) != 0)
+		if ((errId = pthread_cond_destroy(&(drugs.resources[i].waitForResources))) != 0)
 			syserr("%d. Cond destroy %d failed", errId, i);
-		if ((errId = pthread_mutex_destroy(&(drugs.mutex[i]))) != 0)
+		if ((errId = pthread_cond_destroy(&(drugs.resources[i].waitForPair))) != 0)
+			syserr("%d. Cond destroy %d failed", errId, i);
+		if ((errId = pthread_mutex_destroy(&(drugs.resources[i].mutex))) != 0)
 			syserr ("&d. Mutex destroy %d failed", errId, i);
 	}
-	free(drugs.mutex);
-	free(drugs.notEnougthResources);
+	free(drugs.resources);
 	cerr("Resources Freed\n");
 }
 
@@ -106,10 +121,11 @@ void closeIPC()
 void endSafe()
 {
 	int i;
-	cerr("Waiting for resources");
+	cerr("Waiting for resources\n");
 	drugs.error = 1;
 	for (i = 0; i < drugs.K; ++i) {
-		pthread_cond_broadcast(&drugs.notEnougthResources[i]);
+		pthread_cond_broadcast(&drugs.resources[i].waitForResources);
+		pthread_cond_broadcast(&drugs.resources[i].waitForPair);
 	}
 	//TODO waitForWorking();
 	deleteResources();
@@ -151,11 +167,24 @@ void sendResources(long msgType, pid_t otherClientPid)
 		syserr("msgsnd");
 }
 
-void waitForResources(long msgType)
+void getResourcesBack(long msgType, int k, int n)
 {
+	int errId;
 	Mesg msg;
 	if (msgrcv(IPCs[in], &msg, MAXMESGDATA, msgType, 0) <= 0)
 		syserr("msgrcv");
+	
+	if ((errId = pthread_mutex_lock(&(drugs.resources[k].mutex))) != 0)
+		syserr("%d. Lock failed", errId);
+	
+	drugs.resources[k].resource += n;
+	if (drugs.resources[k].resource >= drugs.resources[k].actualRequest && drugs.resources[k].inPair == 2) {
+		if ((errId = pthread_cond_signal(&(drugs.resources[k].waitForResources))) != 0)
+			syserr("%d. Cond signal failed", errId);
+	}
+	
+	if ((errId = pthread_mutex_unlock(&(drugs.resources[k].mutex))) != 0)
+		syserr("%d. Unlock failed", errId);
 }
 
 void getRequest(long msgType, int * k, int * n)
@@ -165,12 +194,86 @@ void getRequest(long msgType, int * k, int * n)
 		syserr("msgrcv");
 	
 	sscanf(msg.mesg_data, requestFormat, k, n);
+	*k = *k - 1;
+}
+
+void printResorurces(int k)
+{
+	printf("%d Resource : Max = %d --- Actual = %d\n", k, drugs.N, drugs.resources[k].resource);
 }
 
 pid_t getPartner(pid_t myClientPid, int k, int n)
 {
-	pid_t otherPid = 134;
-	//such TODO
+	printResorurces(k);
+	pid_t otherPid = 0;
+	int errId;
+	
+	if ((errId = pthread_mutex_lock(&(drugs.resources[k].mutex))) != 0)
+		syserr("%d. Lock failed", errId);
+	
+	while (drugs.resources[k].inPair == 2 && drugs.error != 1) {
+		if ((errId = pthread_cond_wait(&(drugs.resources[k].waitForPair), &(drugs.resources[k].mutex))) != 0)
+			syserr("%d. Cond wait faild", errId);
+	}
+	
+	if (drugs.resources[k].inPair < 2 && drugs.error != 1) {
+		++drugs.resources[k].inPair;
+		drugs.resources[k].actualRequest += n;
+		
+		if (drugs.resources[k].firstPairMember == 0)
+			drugs.resources[k].firstPairMember = myClientPid;
+		else
+			drugs.resources[k].secondPairMember = myClientPid;
+		
+		if (drugs.resources[k].inPair == 1 || drugs.resources[k].resource < drugs.resources[k].actualRequest) {
+			if ((errId = pthread_cond_wait(&(drugs.resources[k].waitForResources), &(drugs.resources[k].mutex))) != 0)
+				syserr("%d. Cond wait faild", errId);
+		}
+		
+		if (drugs.resources[k].firstAwaken == 0)
+			drugs.resources[k].firstAwaken = myClientPid;
+		
+		if (drugs.resources[k].firstPairMember == myClientPid)
+			otherPid = drugs.resources[k].secondPairMember;
+		else
+			otherPid = drugs.resources[k].firstPairMember;
+		
+	}
+	
+	//NOTE If first client took resources befor error occoured, I let second client to do so.
+	if (drugs.error == 1 && drugs.resources[k].firstAwaken == myClientPid) {
+		
+		drugs.resources[k].firstAwaken = 0;
+		
+		if ((errId = pthread_mutex_unlock(&(drugs.resources[k].mutex))) != 0)
+			syserr("%d. Unlock failed", errId);
+		
+		return myClientPid;
+	}
+	
+	if (drugs.resources[k].firstAwaken == myClientPid) {
+		drugs.resources[k].resource -= (drugs.resources[k].actualRequest);
+		report(pthread_self(), drugs.resources[k].actualRequest - n, n, k + 1, otherPid, myClientPid, drugs.resources[k].resource);
+		
+		if ((errId = pthread_cond_signal(&(drugs.resources[k].waitForResources))) != 0)
+			syserr("%d. Cond signal failed", errId);
+	} else {
+		drugs.resources[k].actualRequest = 0;
+		drugs.resources[k].inPair = 0;
+		drugs.resources[k].firstPairMember = 0;
+		drugs.resources[k].secondPairMember = 0;
+		drugs.resources[k].firstAwaken = 0;
+		
+		if ((errId = pthread_cond_signal(&(drugs.resources[k].waitForPair))) != 0)
+			syserr("%d. Cond signal failed", errId);
+		
+		if ((errId = pthread_cond_signal(&(drugs.resources[k].waitForPair))) != 0)
+			syserr("%d. Cond signal failed", errId);
+	}
+	
+	if ((errId = pthread_mutex_unlock(&(drugs.resources[k].mutex))) != 0)
+		syserr("%d. Unlock failed", errId);
+	
 	return otherPid;
 }
 
@@ -182,13 +285,14 @@ void *clientThread(void *data)
 	int k, n;
 	long msgType = clientPid;
 	getRequest(msgType, &k, &n);
+	cerr("Received request\n");
 	pid_t otherPid = getPartner(clientPid, k, n);
 	if (otherPid == clientPid) {
 		sendErrorInfo(msgType);
 	} else {
-		//report(myData.me, );
 		sendResources(msgType, otherPid);
-		waitForResources(msgType);
+		getResourcesBack(msgType, k, n);
+		cerr("Received resources\n");
 	}
 	cerr("Thread End\n");
 	return 0;

@@ -14,6 +14,7 @@
 long int server_t = 69L;
 char ERROR[] = "ERROR";
 char requestFormat[] = "%d %d";
+char threadReportFormat[] ="Wątek %lu przydziela %d+%d zasobów %d klientom %d %d, pozostało %d zasobów\n";
 enum mIPC {
 	in = 0,
 	out = 1
