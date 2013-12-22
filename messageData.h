@@ -11,7 +11,7 @@
 #define S_KEY 108L
 #define K_KEY 1337L
 
-long int server_t = 69L;
+long server_t = 69L;
 char ERROR[] = "ERROR";
 char requestFormat[] = "%d %d";
 char threadReportFormat[] ="Wątek %lu przydziela %d+%d zasobów %d klientom %d %d, pozostało %d zasobów\n";

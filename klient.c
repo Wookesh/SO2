@@ -54,7 +54,7 @@ pid_t getResources()
 	if (msgrcv(IPCs[in], &msg, MAXMESGDATA, type, 0) <= 0)
 		syserr("msgrcv");
 	
-	if (strcmp(msg.mesg_data, ERROR) == 0)
+	if (strncmp(msg.mesg_data, ERROR, strlen(ERROR)) == 0)
 		syserr("Server Closed\n");
 	
 	return atoi(msg.mesg_data);
@@ -83,9 +83,9 @@ int main(int argc, char **argv)
 	
 	getIPCs();
 	sendBeginProtocol(myPid);
-	printf("Send BP\n");
+	fprintf(stderr, "Send BP\n");
 	requestResources(k, n);
-	printf("RequestMade\n");
+	fprintf(stderr, "RequestMade\n");
 	otherPid = getResources();
 	report(k, n, myPid, otherPid);
 	work(s);

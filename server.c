@@ -13,6 +13,8 @@
 
 int IPCs[2];
 
+pthread_t mainThread;
+
 struct Resource {
 	int resource;
 	int inPair;
@@ -33,14 +35,6 @@ struct Resources {
 };
 
 struct Resources drugs;
-
-void cerr(char * msg)
-{
-	char i = 0;
-	while (*(msg + i) != '\0')
-		++i;
-	write(2, msg, i);
-}
 
 void report(pthread_t thread, int m, int n, int k, pid_t PID1, pid_t PID2, int resourcesLeft)
 {
@@ -69,7 +63,7 @@ void createResources(int K, int N)
 			syserr("&d Cond init %d failed", errId, i);
 	}
 	
-	cerr("Reources Created\n");
+	fprintf(stderr,"Resources Created\n");
 }
 
 void initiateThreads(pthread_attr_t * attr)
@@ -95,7 +89,7 @@ void deleteResources()
 			syserr ("&d. Mutex destroy %d failed", errId, i);
 	}
 	free(drugs.resources);
-	cerr("Resources Freed\n");
+	fprintf(stderr,"Resources Freed\n");
 }
 
 void createIPC()
@@ -105,7 +99,7 @@ void createIPC()
 
 	if ((IPCs[out] = msgget(K_KEY, 0666 | IPC_CREAT | IPC_EXCL)) == -1)
 		syserr("msgget IPCs OUT", K_KEY);
-	cerr("IPCs Created\n");
+	fprintf(stderr,"IPCs Created\n");
 }
 
 void closeIPC()
@@ -115,7 +109,7 @@ void closeIPC()
 
 	if (msgctl(IPCs[out], IPC_RMID, 0) == -1)
 		syserr("msgctl RMID IPCs OUT");
-	cerr("IPCs Closed\n");
+	fprintf(stderr,"IPCs Closed\n");
 }
 
 void waitForWorking()
@@ -139,21 +133,26 @@ void waitForWorking()
 void endSafe()
 {
 	int i;
-	cerr("Waiting for resources\n");
+	fprintf(stderr,"Waiting for resources\n");
 	drugs.error = 1;
 	for (i = 0; i < drugs.K; ++i) {
 		pthread_cond_broadcast(&drugs.resources[i].waitForResources);
 		pthread_cond_broadcast(&drugs.resources[i].waitForPair);
 	}
 	waitForWorking();
+	fprintf(stderr, "All resources received\n");
 	deleteResources();
 	closeIPC();
 }
 
 void exitServer(int sig)
 {
-	endSafe();
-	exit(0);
+	if (pthread_self() == mainThread) {
+		endSafe();
+		exit(0);
+	} else {
+		pthread_kill(mainThread, SIGINT);
+	}
 }
 
 int getNewClientPid()
@@ -162,8 +161,7 @@ int getNewClientPid()
 	if (msgrcv(IPCs[in], &msg, MAXMESGDATA, server_t, 0) <= 0)
 		syserr("msgrcv");
 
-	cerr("Receiving transmission : ");
-	cerr(msg.mesg_data);
+	fprintf(stderr,"Receiving transmission : %s", msg.mesg_data);
 	return atoi(msg.mesg_data);
 }
 
@@ -297,22 +295,23 @@ pid_t getPartner(pid_t myClientPid, int k, int n)
 
 void *clientThread(void *data)
 {
-	cerr("Thread Start\n");
+	fprintf(stderr,"Thread Start\n");
 	pthread_t pthread_self();
 	pid_t clientPid = *(pid_t *)data;
 	int k, n;
 	long msgType = clientPid;
 	getRequest(msgType, &k, &n);
-	cerr("Received request\n");
+	fprintf(stderr,"Received request\n");
 	pid_t otherPid = getPartner(clientPid, k, n);
 	if (otherPid == clientPid) {
 		sendErrorInfo(msgType);
+		fprintf(stderr,"Sent Error message\n");
 	} else {
 		sendResources(msgType, otherPid);
 		getResourcesBack(msgType, k, n);
-		cerr("Received resources\n");
+		fprintf(stderr,"Received resources\n");
 	}
-	cerr("Thread End\n");
+	fprintf(stderr,"Thread End\n");
 	return 0;
 }
 
@@ -323,7 +322,7 @@ void createClientThread(pid_t clientPid, pthread_attr_t *attr)
 	if ((errId = pthread_create(&thread, attr, clientThread, (void *)&clientPid)) != 0)
 		syserr("%d. Pthread create", errId);
 	
-	cerr("Created New Thread\n");
+	fprintf(stderr,"Created New Thread\n");
 }
 
 int main(int argc, char **argv)
@@ -331,25 +330,26 @@ int main(int argc, char **argv)
 	if (argc != 3)
 		syserr("Wrong number of parameters");
 	
-	if (signal(SIGINT,  exitServer) == SIG_ERR)
+	if (signal(SIGINT, exitServer) == SIG_ERR)
 		syserr("signal");
 	
 	int K = atoi(argv[1]);
 	int N = atoi(argv[2]);
 	int newClient;
+	mainThread = pthread_self();
 	pthread_attr_t attr;
 	createResources(K, N);
 	createIPC();
 	initiateThreads(&attr);
 	
-	cerr("Server prepared to work\n");
+	fprintf(stderr,"Server prepared to work\n");
 	
 	for (;;) {
 		newClient = getNewClientPid();
 		createClientThread(newClient, &attr);
 	}
 	
-	cerr("Server turning off normally\n");
+	fprintf(stderr,"Server turning off normally\n");
 	
 	endSafe();
 	return 0;
