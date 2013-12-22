@@ -118,6 +118,24 @@ void closeIPC()
 	cerr("IPCs Closed\n");
 }
 
+void waitForWorking()
+{
+	int errId, i;
+	for (i = 0; i < drugs.K; ++i) {
+		if ((errId = pthread_mutex_lock(&(drugs.resources[i].mutex))) != 0)
+			syserr("%d. Lock failed", errId);
+		
+		while (drugs.resources[i].resource != drugs.N) {
+			if ((errId = pthread_cond_wait(&(drugs.resources[i].waitForResources), &(drugs.resources[i].mutex))) != 0)
+				syserr("%d. Cond wait faild", errId);
+		}
+		
+		if ((errId = pthread_mutex_unlock(&(drugs.resources[i].mutex))) != 0)
+			syserr("%d. Unlock failed", errId);
+		
+	}
+}
+
 void endSafe()
 {
 	int i;
@@ -127,7 +145,7 @@ void endSafe()
 		pthread_cond_broadcast(&drugs.resources[i].waitForResources);
 		pthread_cond_broadcast(&drugs.resources[i].waitForPair);
 	}
-	//TODO waitForWorking();
+	waitForWorking();
 	deleteResources();
 	closeIPC();
 }
@@ -178,7 +196,7 @@ void getResourcesBack(long msgType, int k, int n)
 		syserr("%d. Lock failed", errId);
 	
 	drugs.resources[k].resource += n;
-	if (drugs.resources[k].resource >= drugs.resources[k].actualRequest && drugs.resources[k].inPair == 2) {
+	if ((drugs.resources[k].resource >= drugs.resources[k].actualRequest && drugs.resources[k].inPair == 2) || drugs.error == 1) {
 		if ((errId = pthread_cond_signal(&(drugs.resources[k].waitForResources))) != 0)
 			syserr("%d. Cond signal failed", errId);
 	}
