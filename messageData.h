@@ -7,11 +7,11 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 
-#define MAXMESGDATA 4000
+#define MAXMESGDATA 32
 #define S_KEY 108L
 #define K_KEY 1337L
 
-long server_t = 69L;
+long server_t = 1L;
 char ERROR[] = "ERROR";
 char requestFormat[] = "%d %d";
 char threadReportFormat[] ="Wątek %lu przydziela %d+%d zasobów %d klientom %d %d, pozostało %d zasobów\n";

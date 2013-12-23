@@ -10,7 +10,7 @@
 #include "messageData.h"
 
 int IPCs[2];
-long int type;
+long type;
 
 void getIPCs()
 {
@@ -70,6 +70,11 @@ void report(int k, int n, pid_t myPid, pid_t otherPid)
 	printf("%d %d %d %d\n", k, n, myPid, otherPid);
 }
 
+void reportFinish(pid_t myPid)
+{
+	printf("%d KONIEC\n", myPid);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc != 4)
@@ -83,12 +88,11 @@ int main(int argc, char **argv)
 	
 	getIPCs();
 	sendBeginProtocol(myPid);
-	fprintf(stderr, "Send BP\n");
 	requestResources(k, n);
-	fprintf(stderr, "RequestMade\n");
 	otherPid = getResources();
 	report(k, n, myPid, otherPid);
 	work(s);
 	sendEndProtocol();
+	reportFinish(myPid);
 	return 0;
 }
