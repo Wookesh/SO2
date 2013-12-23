@@ -1,4 +1,5 @@
-/* Łukasz Piesiewicz 334978
+/**
+ * Łukasz Piesiewicz 334978
  */
 
 #include <stdio.h>
@@ -43,7 +44,7 @@ void sendEndProtocol()
 {
 	Mesg msg;
 	msg.mesg_type = type;
-	sprintf(msg.mesg_data, "THXBRO\n");
+	sprintf(msg.mesg_data, "FINISHED\n");
 	if (msgsnd(IPCs[out], (char *) &msg, strlen(msg.mesg_data), 0) != 0)
 		syserr("msgsnd");
 }

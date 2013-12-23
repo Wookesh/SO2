@@ -1,4 +1,5 @@
-/* Łukasz Piesiewicz 334978
+/**
+ * Łukasz Piesiewicz 334978
  */
 
 #ifndef MESSAGEDATA_H
